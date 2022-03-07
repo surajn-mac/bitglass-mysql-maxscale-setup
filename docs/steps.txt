@@ -1,0 +1,228 @@
+Summary:
+	
+	
+	1. MYSQL EC2 MASTER <----MAXSCALE (binary logs are pulled/copied from MYSQL EC2 MASTER to /var/lib/maxscale/binlogs/)
+	2. MYSQL RDS MASTER <----MAXSCALE (binary logs are not being pulled/copied from MYSQL RDS MASTER to /var/lib/maxscale/binlogs/ OR only one binary log is pulled of 4K and does not increase in size)
+	3. MYSQL RDS MASTER <---- 2(HA) x EC2 on MYSQL(Slave, Master to Maxscale) <----- 2(HA) x MAXSCALE <-----FINAL MANY SLAVES RDS
+	
+	
+	
+
+	4. MARIADB RDS MASTER <---- MAXSCALE on EC2 <---- MARIADB RDS SLAVE
+
+
+
+
+
+EC2 MYSQL:
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='10.0.1.7', MASTER_PORT=3306, MASTER_USER='maxscalemariadbuser',MASTER_PASSWORD='maxscalemariadbpass',MASTER_USE_GTID=current_pos;
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+	
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='10.0.1.47', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID='0-225577885-231:0-22-188';
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+Working setup:
+
+RDS MASTER:
+	mysql -hrds-master.caibzivvbsoy.us-west-2.rds.amazonaws.com -ubinlog -P 3306 -p < employees.sql
+	SHOW BINLOG EVENTS;
+	SHOW VARIABLES LIKE '%pos%'; --get the gtid_current_pos
+
+RDS Maxscale:
+	SET GLOBAL gtid_slave_pos = "0-1425979728-21"; -- GTID of the last change
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='mariadb-10-2-43.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID=slave_pos;
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='us-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_AUTO_POSITION='1';
+
+
+FINAL SLAVE:
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='10.0.1.47', MASTER_PORT=5308, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_LOG_FILE='mysql-bin-changelog.000007',MASTER_LOG_POS=554;
+	START SLAVE;
+
+
+	mysql-bin.000002
+	
+	
+	CALL mysql.rds_stop_replication;
+	CALL mysql.rds_set_external_master ('10.0.1.47', 5308, 'binlog', 'Hello123', 'mysql-bin-changelog.000007', 554, 0);
+	CALL mysql.rds_start_replication;
+
+
+	CALL mysql.rds_stop_replication;
+	CALL mysql.rds_set_external_master_gtid('10.0.1.47', 5308, 'binlog', 'Hello123', '0-1425979728-22', 0);
+	CALL mysql.rds_start_replication;
+
+
+
+
+	this:
+	CALL mysql.rds_stop_replication;
+	CALL mysql.rds_set_external_master ('10.0.1.47', 5308, 'binlog', 'Hello123', 'mysql-bin-changelog.001136', 299, 0);
+	CALL mysql.rds_start_replication;
+
+
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "CALL mysql.rds_stop_replication;"
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "CALL mysql.rds_set_external_master ('10.0.1.47', 5308, 'binlog', 'Hello123', 'mysql-bin-changelog.001136', 299, 0);"
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "CALL mysql.rds_start_replication;"
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "SHOW SLAVE STATUS\G;"
+	
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "create database employees"
+	mysql -hus-east-1-rds1.cln3dboqkh3z.us-east-1.rds.amazonaws.com -ubinlog -pNs9zan23afn2wj7sfd -e "SHOW DATABASES;"
+
+	
+
+ mysqldump -hmariadb-10-2-43.caibzivvbsoy.us-west-2.rds.amazonaws.com -ubinlog -p --databases employees --master-data=1 > backup-gtid-1.sql
+
+
+
+GTID:
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='us-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID='90710e1c-f699-11ea-85c0-0ec6a6bed381:1-11952';
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='binlogproxy.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID='1-11910';
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+
+6.2+2.4
+
+
+FILE:
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='us-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_LOG_FILE='mysql-bin.000001', MASTER_LOG_POS=4;
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+
+
+LOCAL:
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='127.0.0.1', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID=current_pos;
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+	
+	CHANGE MASTER TO MASTER_HOST='127.0.0.1', MASTER_PORT=5308, MASTER_USER='maxscalemariadbuser', MASTER_PASSWORD='maxscalemariadbpass', MASTER_LOG_FILE='mysql-bin.000013', MASTER_LOG_POS=608;
+
+	
+	START SLAVE;
+
+	
+	
+	
+CHANGE MASTER TO MASTER_HOST='us-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID=current_pos;
+
+One of the errors: Slave_IO_State: Reconnecting after a failed master event read (when using current_pos)
+	
+
+
+
+	STOP SLAVE;
+	CHANGE MASTER TO MASTER_HOST='10.0.1.7', MASTER_PORT=3306, MASTER_USER='binlog', MASTER_PASSWORD='Hello123',MASTER_USE_GTID='0-225577885-231:0-22-188';
+	START SLAVE;
+	SHOW SLAVE STATUS\G;
+
+
+
+
+
+mysql -hus-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com -ubinlog -P 3306 -p < employees.sql
+mysql -hus-west-2-rds1.caibzivvbsoy.us-west-2.rds.amazonaws.com -umaxscalemariadbuser -pmaxscalemariadbpass
+
+
+
+
+
+
+
+
+
+SHOW MASTER STATUS;
+SELECT MASTER_POS_WAIT('file', position);
+SELECT MASTER_POS_WAIT('mysql-bin-changelog.013932', 194);
+
+
+
+
+	
+	
+	
+STOP SLAVE;
+SET GLOBAL SQL_SLAVE_SKIP_COUNTER = 1;
+START SLAVE;	
+SHOW SLAVE STATUS\G;
+
+	1195
+	
+	
+	
+mysql -hus-east-2-rds1.cbpycd7ljqt2.us-east-2.rds.amazonaws.com -ubinlog -P 3306 -p
+
+	
+	
+	
+
+
+
+CHANGE MASTER TO MASTER_HOST=“mysql.xxxxx.rds.amazonaws.com", MASTER_USER="rep_user", MASTER_PASSWORD="rep_user", MASTER_PORT=3306, MASTER_AUTO_POSITION = 1;
+START SLAVE;
+	
+	
+	
+call mysql.rds_set_configuration('binlog retention hours', 168);	
+
+
+
+
+
+
+
+
+
+
+Create new Slave RDS:
+	1. Run CFT to create new RDS
+
+Setup the Slave RDS Slave:
+	1. Create a new Read Replica of RDS Master/Use an existing one
+	2. Set a value for the binary log retention to 7 days
+		call mysql.rds_set_configuration('binlog retention hours', 168);
+	3.Stop the replication by running the following command on the read replica:
+		CALL mysql.rds_stop_replication;
+	4.Take the mysqldump without --master-data=2 from the read replica.
+		mysqldump -hHOSTNAME -uUSERNAME -pPASSWORD > master-backup.sql
+	5.Run SHOW SLAVE STATUS on the replica and capture the Master_Log_File and Exec_Master_Log_Pos.
+		Get location of GTID:
+		GTID: SHOW VARIABLES LIKE '%pos%'; --get the gtid_current_pos
+	6.If you use the replica for your application, start replication again by using the following stored procedure:
+		CALL mysql.rds_start_replication;
+	7.Restore the backup on the newly created RDS Slave
+		mysql -hHOSTNAME -uUSERNAME -pPASSWORD < master-backup.sql
+	8.Connect this RDS Slave to Maxscale with the following commands:
+		SET GLOBAL gtid_slave_pos = GTID
+		CALL mysql.rds_stop_replication;
+		CALL mysql.rds_set_external_master_gtid('Maxscale_hostname', Maxscale_Port, 'Maxscale_Username', 'Maxscale_Password', 'GTID', 0);
+		CALL mysql.rds_start_replication;
+		SHOW SLAVE STATUS\G;
+		
+
+
+
+
+
+
+
+
+
